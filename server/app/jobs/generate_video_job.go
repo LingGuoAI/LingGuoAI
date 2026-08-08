@@ -15,6 +15,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"spiritFruit/app/models/async_tasks"
+	"spiritFruit/app/models/projects"
 	"spiritFruit/app/models/shot_frame_image"
 	"spiritFruit/app/models/shots"
 	"spiritFruit/app/services"
@@ -181,6 +182,27 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 	var shotModel shots.Shots
 	var structuredPrompt string
 	var autoRefImages []string // 备用的角色/道具图片池
+	projectStyle := "realistic cinematic style"
+	aspectRatio := "16:9"
+	var projectModel projects.Projects
+	if err := database.DB.First(&projectModel, p.ProjectID).Error; err == nil {
+		if projectModel.Style != nil && strings.TrimSpace(*projectModel.Style) != "" {
+			projectStyle = strings.TrimSpace(*projectModel.Style)
+		}
+		if projectModel.Settings != nil && *projectModel.Settings != "" {
+			var settings map[string]interface{}
+			if json.Unmarshal([]byte(*projectModel.Settings), &settings) == nil {
+				for _, key := range []string{"aspectRatio", "aspect_ratio", "ratio"} {
+					if v, ok := settings[key].(string); ok && v != "" {
+						aspectRatio = v
+						break
+					}
+				}
+			}
+		}
+	}
+	p.Style = projectStyle
+	p.AspectRatio = aspectRatio
 
 	if err := database.DB.Preload("Scenes").Preload("Characters").Preload("Props").First(&shotModel, p.ShotID).Error; err == nil {
 		var pb strings.Builder
@@ -346,6 +368,7 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 	taskModel.UpdateProgress(20)
 	var opts []video.VideoOption
 	opts = append(opts, video.WithDuration(p.Duration))
+	opts = append(opts, video.WithStyle(projectStyle), video.WithAspectRatio(aspectRatio))
 
 	appURL := config.GetString("app.url")
 	fixURL := func(url string) string {
@@ -394,8 +417,15 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 	}
 
 	constraintPrompt := promptGen.GetVideoConstraintPrompt(referenceMode)
+	styleConstraint := fmt.Sprintf(`=== Global Visual Bible (mandatory) ===
+Visual style: %s.
+Aspect ratio: %s.
+Keep the same art direction, color palette, lighting language, rendering technique, character facial identity, hairstyle, costume, body proportions, scene architecture, material texture and lens language as all other shots in this project.
+The supplied reference frame is the visual source of truth. Do not redesign characters, costumes, locations or color grading. Do not switch between realistic, anime, 3D, illustration or live-action styles.`, projectStyle, aspectRatio)
 	if constraintPrompt != "" {
-		finalPrompt = constraintPrompt + "\n\n=== Script & Scene Details ===\n" + finalPrompt
+		finalPrompt = styleConstraint + "\n\n" + constraintPrompt + "\n\n=== Script & Scene Details ===\n" + finalPrompt
+	} else {
+		finalPrompt = styleConstraint + "\n\n=== Script & Scene Details ===\n" + finalPrompt
 	}
 
 	console.Success(fmt.Sprintf("任务[%d] 最终 Prompt: \n%s", p.AsyncTaskID, finalPrompt))

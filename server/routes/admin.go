@@ -110,6 +110,20 @@ func RegisterAdminAPIRoutes(r *gin.Engine) {
 		}
 
 		// 剧本相关路由
+		workflowGroup := v1.Group("/script-workflows").Use(middlewares.AuthAdminJWT())
+		{
+			ctrl := new(controllers.ScriptWorkflowsController)
+			workflowGroup.POST("", ctrl.Create)
+			workflowGroup.GET("", ctrl.List)
+			workflowGroup.GET("/:id", ctrl.Show)
+			workflowGroup.POST("/:id/run", ctrl.RunStage)
+			workflowGroup.POST("/:id/episodes/generate", ctrl.GenerateEpisodes)
+			workflowGroup.POST("/:id/confirm", ctrl.ConfirmStep)
+			workflowGroup.POST("/:id/episodes/:episodeNo/confirm", ctrl.ConfirmEpisode)
+			workflowGroup.PUT("/:id/episodes/:episodeNo", ctrl.UpdateEpisode)
+			workflowGroup.GET("/:id/episodes/:episodeNo/versions", ctrl.Versions)
+		}
+
 		scriptsGroup := v1.Group("/scripts").Use(middlewares.AuthAdminJWT())
 		{
 			scriptsController := new(controllers.ScriptsController)

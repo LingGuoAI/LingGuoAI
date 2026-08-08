@@ -21,12 +21,16 @@ var (
 
 func initGlobalHTTPClient() {
 	apiTransport := &http.Transport{
+		// 项目部署环境可能需要通过 HTTP(S)_PROXY 访问境外/跨区域模型服务。
+		// 自定义 Transport 不会自动继承代理配置，必须显式设置。
+		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:        100,
-		TLSHandshakeTimeout: 10 * time.Second,
+		MaxIdleConns:          100,
+		TLSHandshakeTimeout:   30 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
 	}
 	globalHTTPClient = &http.Client{
 		Timeout:   300 * time.Second,
@@ -37,19 +41,31 @@ func initGlobalHTTPClient() {
 // NewProvider 工厂方法：根据配置返回对应的实现
 func NewProvider(cfg Config) Provider {
 	once.Do(func() { initGlobalHTTPClient() })
+	return newProvider(cfg, globalHTTPClient)
+}
+
+// NewProviderWithTimeout 用于配置测试等短请求，避免网络不可达时占用长连接。
+func NewProviderWithTimeout(cfg Config, timeout time.Duration) Provider {
+	once.Do(func() { initGlobalHTTPClient() })
+	client := *globalHTTPClient
+	client.Timeout = timeout
+	return newProvider(cfg, &client)
+}
+
+func newProvider(cfg Config, client *http.Client) Provider {
 	switch cfg.Provider {
 	case "getgoapi":
-		return &GetGoAPIClient{Config: cfg, client: globalHTTPClient}
+		return &GetGoAPIClient{Config: cfg, client: client}
 	case "gemini":
-		return &GeminiClient{Config: cfg, client: globalHTTPClient}
+		return &GeminiClient{Config: cfg, client: client}
 	case "doubao", "volces", "volcengine":
-		return &DoubaoClient{Config: cfg, client: globalHTTPClient}
+		return &DoubaoClient{Config: cfg, client: client}
 	case "vertex", "gcp":
-		return &VertexClient{Config: cfg, client: globalHTTPClient}
+		return &VertexClient{Config: cfg, client: client}
 	case "openai":
 		fallthrough
 	default:
-		return &OpenAIClient{Config: cfg, client: globalHTTPClient}
+		return &OpenAIClient{Config: cfg, client: client}
 	}
 }
 
@@ -65,7 +81,7 @@ func doRequest[T any](client *http.Client, method, url string, headers map[strin
 
 	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("AI request failed (%s %s): %w", method, url, err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -83,7 +99,11 @@ func doRequest[T any](client *http.Client, method, url string, headers map[strin
 
 	if resp.StatusCode != 200 {
 		logger.Error("AI API Error", zap.String("url", url), zap.String("body", string(bodyBytes)))
-		return result, fmt.Errorf("API error: %d", resp.StatusCode)
+		message := string(bodyBytes)
+		if len(message) > 1000 {
+			message = message[:1000]
+		}
+		return result, fmt.Errorf("API error: %d: %s", resp.StatusCode, message)
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {

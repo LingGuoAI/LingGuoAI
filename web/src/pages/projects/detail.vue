@@ -15,6 +15,8 @@
                 </div>
             </div>
             <div class="header-right">
+                <t-button theme="primary" @click="startAIWorkflow"><template #icon><t-icon
+                            name="magic" /></template>AI 创建剧本</t-button>
                 <t-button theme="default" variant="outline" @click="init"><template #icon><t-icon
                             name="refresh" /></template>刷新数据</t-button>
             </div>
@@ -535,6 +537,7 @@ const handleAddEpisode = () => {
     const nextEp = maxEpisodeNo + 1
     router.push(`/admin/projects/chapter/${projectId}/${nextEp}`)
 }
+const startAIWorkflow = () => router.push(`/admin/projects/${projectId}/script-workflow`)
 const enterEpisode = (ep: any) => { router.push(`/admin/projects/chapter/${projectId}/${ep.episodeNo}`) }
 const pollTask = async (taskId: string, onSuccess: () => void, onFail: () => void) => {
     const timer = setInterval(async () => {

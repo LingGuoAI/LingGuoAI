@@ -380,9 +380,11 @@ const startPolling = (taskId: number | string, type: string) => {
     const poll = async () => {
         try {
             const res: any = await request.get({ url: `/tasks/${taskId}` });
-            const task = res.data;
+            const payload = res.data?.data || res.data;
+            const task = payload?.task || payload;
+            const statusName = task?.statusName || task?.status_name;
 
-            if (task.status === 2 && task.process === 100) {
+            if ((task.status === 2 || statusName === 'succeeded') && task.process === 100) {
                 testPolling.value = false;
                 let resultObj: any = {};
                 try { resultObj = JSON.parse(task.result || '{}'); } catch (e) { resultObj = { raw: task.result }; }
@@ -395,9 +397,9 @@ const startPolling = (taskId: number | string, type: string) => {
                 }
                 MessagePlugin.success('测试成功！');
                 stopPolling();
-            } else if (task.status === 4 || task.status === -1 || task.status === 3) {
+            } else if (task.status === 4 || task.status === -1 || task.status === 3 || statusName === 'failed' || statusName === 'cancelled') {
                 testPolling.value = false;
-                testResultData.value = task.error_msg || '任务失败';
+                testResultData.value = task.errorMsg || task.error_msg || '任务失败';
                 MessagePlugin.error('测试执行失败');
                 stopPolling();
             } else {

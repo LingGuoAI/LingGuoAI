@@ -165,6 +165,7 @@ export const generateVideoTask = (data: {
 export const mergeVideoTask = (data: {
   projectId: number | string;
   episodeNumber: number | string;
+  scriptId?: number | string;
   clips: Array<{
     assetId?: number | string | null;
     shotId: string | number;
@@ -172,6 +173,7 @@ export const mergeVideoTask = (data: {
     startTime: number;
     endTime: number;
     duration: number;
+    url?: string;
     transition?: Record<string, any>;
   }>;
 }) => {

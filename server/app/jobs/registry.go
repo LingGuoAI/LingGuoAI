@@ -20,6 +20,7 @@ func NewServeMux() *hibikenAsynq.ServeMux {
 	mux.HandleFunc(tasktypes.TypeGenerateFrameImage, HandleGenerateFrameImageTask)
 	mux.HandleFunc(tasktypes.TypeGenerateVideo, HandleGenerateVideoTask)
 	mux.HandleFunc(tasktypes.TypeMergeVideo, HandleMergeVideoTask)
+	mux.HandleFunc(tasktypes.TypeScriptWorkflowStage, HandleScriptWorkflow)
 
 	return mux
 }

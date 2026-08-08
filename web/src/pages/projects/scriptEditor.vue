@@ -71,6 +71,10 @@
                             <t-button theme="primary" variant="text" size="small" @click="addAllAssetsToTimeline">
                                 <template #icon><t-icon name="add-rectangle" /></template>一键添加
                             </t-button>
+                            <t-button theme="success" variant="outline" size="small" @click="exportVideo"
+                                :disabled="timelineClips.length === 0" :loading="mergingVideo">
+                                <template #icon><t-icon name="layers" /></template>合成当前剧集
+                            </t-button>
                             <t-button theme="default" variant="text" size="small" @click="loadVideoAssets">
                                 <template #icon><t-icon name="refresh" /></template>
                             </t-button>
@@ -445,9 +449,8 @@
                                     </t-select>
                                 </t-form-item>
 
-                                <t-form-item label="时长 (秒)">
-                                    <t-slider v-model="videoDuration" :min="2" :max="10" />
-                                </t-form-item>
+                                <t-alert theme="info"
+                                    :message="`视频时长使用镜头属性：${currentShotDurationSeconds} 秒。如需修改，请到“镜头属性”调整。`" />
 
                                 <t-form-item label="参考图模式"
                                     v-if="selectedVideoModel && availableReferenceModes.length > 0">
@@ -895,7 +898,7 @@ const mainPlayerRef = ref<HTMLVideoElement | null>(null)
 // ================= 视频生成相关逻辑 =================
 const generatingVideo = ref(false)
 const selectedVideoModel = ref('doubao-seedance-1-5-pro-251215')
-const videoDuration = ref(5)
+const currentShotDurationSeconds = computed(() => Math.max(1, Math.round(Number(currentStoryboard.value?.durationMs || 3000) / 1000)))
 const referenceMode = ref('single')
 const selectedVideoFrameType = ref('first')
 const generatedVideos = ref<any[]>([])
@@ -1889,7 +1892,7 @@ const generateVideo = async () => {
             projectId: Number(dramaId),
             shotId: currentStoryboard.value.id,
             model: selectedVideoModel.value,
-            duration: videoDuration.value,
+            duration: currentShotDurationSeconds.value,
             prompt: currentStoryboard.value.videoPrompt || currentStoryboard.value.imagePrompt || currentStoryboard.value.visualDesc || '',
             referenceMode: referenceMode.value
         }
@@ -1927,12 +1930,14 @@ const generateVideo = async () => {
             const timer = setInterval(async () => {
                 try {
                     const taskRes = await findTasks(taskId);
-                    const taskData = taskRes.data?.data || taskRes.data || taskRes;
+                    const payload = taskRes.data?.data || taskRes.data || taskRes;
+                    const taskData = payload?.task || payload;
                     const status = taskData?.status;
+                    const statusName = taskData?.statusName || taskData?.status_name;
 
                     const idx = generatedVideos.value.findIndex(v => v.taskId === taskId);
 
-                    if (status === 'completed' || status === 2) {
+                    if (status === 'completed' || status === 'succeeded' || statusName === 'succeeded' || status === 2 || taskData?.process >= 100) {
                         clearInterval(timer);
                         generatingVideo.value = false;
                         MessagePlugin.success('视频生成成功！');
@@ -1943,16 +1948,21 @@ const generateVideo = async () => {
                                 try { resultData = JSON.parse(resultData); } catch (e) { }
                             }
                             generatedVideos.value[idx].status = 2;
-                            generatedVideos.value[idx].url = resultData?.url || resultData?.video_url || resultData?.videoUrl;
+                            generatedVideos.value[idx].url = resultData?.url || resultData?.video_url || resultData?.videoUrl || taskData?.videoUrl || taskData?.video_url;
 
                             if (currentStoryboard.value) {
                                 currentStoryboard.value.videoUrl = generatedVideos.value[idx].url;
                             }
                         }
-                    } else if (status === 'failed' || status === 3) {
+                        // Worker 完成后重新读取镜头，拿到数据库中最终保存的视频地址。
+                        await loadShotsData();
+                        syncGeneratedVideos();
+                        const persisted = generatedVideos.value.find(v => v.taskId === taskId);
+                        if (persisted?.url) currentPreviewUrl.value = getImageUrl(persisted.url);
+                    } else if (status === 'failed' || statusName === 'failed' || status === 3 || status === 'cancelled' || statusName === 'cancelled' || status === 4) {
                         clearInterval(timer);
                         generatingVideo.value = false;
-                        MessagePlugin.error(taskData?.error_msg || taskData?.error || '生成失败');
+                        MessagePlugin.error(taskData?.errorMsg || taskData?.error_msg || taskData?.error || '生成失败');
                         if (idx > -1) generatedVideos.value[idx].status = 3;
                     }
                 } catch (e) {
@@ -2021,17 +2031,20 @@ const exportVideo = async () => {
             startTime: clip.start,
             endTime: clip.start + clip.duration,
             duration: clip.duration,
+            url: clip.url,
             transition: clip.transition || { type: "none" }
         }));
 
         const requestPayload = {
             projectId: Number(dramaId),
             episodeNumber: episodeNumber,
+            scriptId: Number(currentScriptId.value),
             clips: formattedClips
         };
 
         const res = await mergeVideoTask(requestPayload);
-        const taskId = res?.task_id || res?.taskId || res?.data?.task_id || res?.id;
+        const responseData = res?.data?.data || res?.data || res;
+        const taskId = responseData?.task_id || responseData?.taskId || responseData?.id;
 
         if (taskId) {
             MessagePlugin.loading('合成任务已提交，系统正在拼命合成中...');
@@ -2041,18 +2054,20 @@ const exportVideo = async () => {
             const timer = setInterval(async () => {
                 try {
                     const taskRes = await findTasks(taskId);
-                    const taskData = taskRes.data?.data || taskRes.data || taskRes;
+                    const payload = taskRes.data?.data || taskRes.data || taskRes;
+                    const taskData = payload?.task || payload;
                     const status = taskData?.status;
+                    const statusName = taskData?.statusName || taskData?.status_name;
 
-                    if (status === 'completed' || status === 2) {
+                    if (status === 'completed' || status === 'succeeded' || statusName === 'succeeded' || status === 2 || taskData?.process >= 100) {
                         clearInterval(timer);
                         mergingVideo.value = false;
                         MessagePlugin.success('视频合成完成！');
                         loadMergeList(); // 刷新列表展示最新结果
-                    } else if (status === 'failed' || status === 3) {
+                    } else if (status === 'failed' || statusName === 'failed' || status === 3 || status === 'cancelled' || statusName === 'cancelled' || status === 4) {
                         clearInterval(timer);
                         mergingVideo.value = false;
-                        MessagePlugin.error(taskData?.error_msg || taskData?.error || '合成失败');
+                        MessagePlugin.error(taskData?.errorMsg || taskData?.error_msg || taskData?.error || '合成失败');
                         loadMergeList();
                     }
                 } catch (e) {

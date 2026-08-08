@@ -39,6 +39,14 @@ func EnqueueGenerateScript(payload GenerateScriptPayload) (*asynq.TaskInfo, erro
 	return GetClient().Enqueue(task, asynq.Queue("critical"))
 }
 
+func EnqueueScriptWorkflow(payload ScriptWorkflowPayload) (*asynq.TaskInfo, error) {
+	bytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return GetClient().Enqueue(asynq.NewTask(TypeScriptWorkflowStage, bytes), asynq.Queue("critical"), asynq.Timeout(10*time.Minute), asynq.MaxRetry(2))
+}
+
 // EnqueueGenerateImage 投递图片生成任务
 func EnqueueGenerateImage(payload GenerateImagePayload) (*asynq.TaskInfo, error) {
 	bytes, err := json.Marshal(payload)

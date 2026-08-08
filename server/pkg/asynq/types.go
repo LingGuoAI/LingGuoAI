@@ -10,11 +10,20 @@ const (
 	TypeExtractProps       = "ai:extract_props"
 	TypeGeneratePropImage  = "ai:generate_prop_image"
 
-	TypeExtractFramePrompt = "ai:extract_frame_prompt" // 提取帧提示词任务
-	TypeGenerateFrameImage = "ai:generate_frame_image" // 生成分镜帧图片任务
-	TypeGenerateVideo      = "ai:generate_video"
-	TypeMergeVideo         = "video:merge" // 视频合并任务
+	TypeExtractFramePrompt  = "ai:extract_frame_prompt" // 提取帧提示词任务
+	TypeGenerateFrameImage  = "ai:generate_frame_image" // 生成分镜帧图片任务
+	TypeGenerateVideo       = "ai:generate_video"
+	TypeMergeVideo          = "video:merge" // 视频合并任务
+	TypeScriptWorkflowStage = "script:workflow_stage"
 )
+
+type ScriptWorkflowPayload struct {
+	AsyncTaskID   uint64 `json:"asyncTaskId"`
+	WorkflowID    uint64 `json:"workflowId"`
+	StepKey       string `json:"stepKey"`
+	EpisodeNo     int    `json:"episodeNo,omitempty"`
+	ChangeRequest string `json:"changeRequest,omitempty"`
+}
 
 // GenerateScriptPayload
 type GenerateScriptPayload struct {
@@ -110,6 +119,8 @@ type GenerateVideoPayload struct {
 	FirstFrameURL      string   `json:"first_frame_url,omitempty"`
 	LastFrameURL       string   `json:"last_frame_url,omitempty"`
 	ReferenceImageURLs []string `json:"reference_image_urls,omitempty"`
+	Style              string   `json:"style,omitempty"`
+	AspectRatio        string   `json:"aspect_ratio,omitempty"`
 }
 
 // MergeClip 合成视频的片段信息

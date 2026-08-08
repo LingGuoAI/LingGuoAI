@@ -530,27 +530,30 @@ const getSceneName = (id: number) => {
 // ========== 3. 工具函数 ==========
 const pollTask = async (
     taskId: string,
-    onSuccess: () => void,
-    onFail: () => void,
+    onSuccess: () => void | Promise<void>,
+    onFail: () => void | Promise<void>,
     onProgress?: (percent: number) => void
 ) => {
     const timer = setInterval(async () => {
         try {
             const res = await findTasks(taskId)
-            const data = res.data?.data || res.data
+            const payload = res.data?.data || res.data
+            // /tasks/:id 返回 { task, events }，兼容旧接口直接返回 task 的格式。
+            const data = payload?.task || payload
             const status = data?.status
+            const statusName = data?.statusName || data?.status_name
             const percent = data?.process || 0 // 🔴 获取后端返回的 process 字段
 
             // 执行进度回调
             if (onProgress) onProgress(percent)
 
-            if (status === 'completed' || status === 2 || percent >= 100) {
+            if (status === 'completed' || status === 'succeeded' || statusName === 'succeeded' || status === 2 || percent >= 100) {
                 clearInterval(timer)
                 if (onProgress) onProgress(100)
-                onSuccess()
-            } else if (status === 'failed' || status === 3) {
+                await onSuccess()
+            } else if (status === 'failed' || statusName === 'failed' || status === 3 || status === 'cancelled' || statusName === 'cancelled' || status === 4) {
                 clearInterval(timer)
-                MessagePlugin.error(data?.error || '任务执行失败')
+                MessagePlugin.error(data?.errorMsg || data?.error_msg || data?.error || '任务执行失败')
                 onFail()
             }
         } catch (e) {
@@ -669,7 +672,7 @@ const parseScriptToCharacters = async () => {
     // 🔴 1. 检查当前是否已经有剧本内容
     const scriptText = currentScriptData.value?.content;
     if (!scriptText || scriptText.trim() === '') {
-        MessagePlugin.warning('请先在第一步撰写并保存剧本');
+        MessagePlugin.warning('请先在第一步撰写并保存剧本'); parsingCharacters.value = false
         return;
     }
     try {
@@ -677,7 +680,7 @@ const parseScriptToCharacters = async () => {
         const taskId = res.data?.data?.task_id || res.data?.taskId || res.data?.task_id
         if (taskId) {
             MessagePlugin.loading('AI 正在提取角色...')
-            pollTask(taskId, () => { parsingCharacters.value = false; MessagePlugin.success('角色提取完成'); loadCharacters() }, () => parsingCharacters.value = false)
+            pollTask(taskId, async () => { parsingCharacters.value = false; await loadCharacters(); MessagePlugin.success('角色提取完成') }, () => parsingCharacters.value = false)
         } else { MessagePlugin.error('提交失败'); parsingCharacters.value = false }
     } catch { parsingCharacters.value = false }
 }

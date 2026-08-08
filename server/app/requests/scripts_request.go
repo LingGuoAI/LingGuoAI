@@ -20,7 +20,7 @@ func ScriptsSave(data interface{}, c *gin.Context) map[string][]string {
 	rules := govalidator.MapData{
 		"projectId": []string{"required", "numeric"},
 		"title":     []string{"max:255"},
-		"content":   []string{"max:5000"},
+		"content":   []string{"max:200000"},
 		"outline":   []string{"max:255"},
 		"episodeNo": []string{"numeric"},
 		"isLocked":  []string{"numeric"},
@@ -35,7 +35,7 @@ func ScriptsSave(data interface{}, c *gin.Context) map[string][]string {
 			"max:分集标题长度不能超过 255 个字符",
 		},
 		"content": []string{
-			"max:剧本正文长度不能超过 5000 个字符",
+			"max:剧本正文长度不能超过 200000 个字符",
 		},
 		"outline": []string{
 			"max:大纲/简介长度不能超过 255 个字符",

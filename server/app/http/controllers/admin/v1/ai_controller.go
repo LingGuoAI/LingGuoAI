@@ -609,7 +609,6 @@ func (ctrl *AiController) ExtractPrompt(c *gin.Context) {
 		response.Abort500(c, "分镜镜头不存在")
 		return
 	}
-
 	projectID := uint64(0)
 	if shot.ProjectId != nil {
 		projectID = *shot.ProjectId
@@ -654,7 +653,6 @@ func (ctrl *AiController) GenerateImageByPrompt(c *gin.Context) {
 		response.Abort500(c, "分镜不存在")
 		return
 	}
-
 	projectID := uint64(0)
 	if shot.ProjectId != nil {
 		projectID = *shot.ProjectId
@@ -706,13 +704,25 @@ func (ctrl *AiController) GenerateVideo(c *gin.Context) {
 		response.Abort500(c, "分镜不存在")
 		return
 	}
+	if shot.ProjectId == nil || *shot.ProjectId != req.ProjectID {
+		response.Abort400(c, "分镜不属于当前项目")
+		return
+	}
+	// 镜头属性是时长的唯一数据源，忽略前端可能缓存的独立时长。
+	duration := 3
+	if shot.DurationMs != nil && *shot.DurationMs > 0 {
+		duration = int((*shot.DurationMs + 500) / 1000)
+		if duration < 1 {
+			duration = 1
+		}
+	}
 
 	// 2. 组装 Payload
 	payload := asynq.GenerateVideoPayload{
 		ProjectID:          req.ProjectID,
 		ShotID:             req.ShotID,
 		Model:              req.Model,
-		Duration:           req.Duration,
+		Duration:           duration,
 		Prompt:             req.Prompt,
 		ReferenceMode:      req.ReferenceMode,
 		ImageURL:           req.ImageURL,
@@ -828,7 +838,7 @@ func (ctrl *AiController) TestTextConfig(c *gin.Context) {
 	}
 
 	aiConfig := buildTestAiConfig(req, "text")
-	aiProvider := openai.NewProvider(aiConfig)
+	aiProvider := openai.NewProviderWithTimeout(aiConfig, 20*time.Second)
 
 	// 发起轻量级文本请求
 	scriptReq := openai.ScriptRequest{
@@ -840,7 +850,8 @@ func (ctrl *AiController) TestTextConfig(c *gin.Context) {
 
 	aiResp, err := aiProvider.GenerateScript(scriptReq)
 	if err != nil {
-		response.Abort500(c, "文本模型连接失败: "+err.Error())
+		// 上游 AI 服务不可达/返回错误属于网关错误，不应伪装成应用内部异常。
+		c.AbortWithStatusJSON(502, gin.H{"code": 502, "message": "文本模型连接失败: " + err.Error()})
 		return
 	}
 
@@ -936,11 +947,12 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 
 	// 3. 在本地数据库创建测试任务记录 (让前端去轮询这个内部ID)
 	task := async_tasks.AsyncTask{
-		ProjectID: 0, // 测试任务，无实际项目归属
-		Type:      "test_video_config",
-		Status:    async_tasks.StatusProcessing, // 设置为进行中 (通常是 1 或 2，视你系统定)
-		Process:   10,                           // 初始进度
-		Payload:   "{}",
+		ProjectID:  0, // 测试任务，无实际项目归属
+		Type:       "test_video_config",
+		Status:     async_tasks.StatusProcessing, // 设置为进行中 (通常是 1 或 2，视你系统定)
+		Process:    10,                           // 初始进度
+		Payload:    "{}",
+		StatusName: async_tasks.StatusNameRunning,
 	}
 	if err := database.DB.Create(&task).Error; err != nil {
 		response.Abort500(c, "创建测试记录失败: "+err.Error())
@@ -983,8 +995,10 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 			// 如果厂商明确返回失败
 			if statusRes.Error != "" {
 				database.DB.Model(&async_tasks.AsyncTask{}).Where("id = ?", internalID).Updates(map[string]interface{}{
-					"status":    async_tasks.StatusFailed,
-					"error_msg": statusRes.Error,
+					"status":      async_tasks.StatusFailed,
+					"status_name": async_tasks.StatusNameFailed,
+					"error_msg":   statusRes.Error,
+					"finished_at": time.Now(),
 				})
 				return
 			}
@@ -995,9 +1009,11 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 					"video_url": statusRes.VideoURL,
 				})
 				database.DB.Model(&async_tasks.AsyncTask{}).Where("id = ?", internalID).Updates(map[string]interface{}{
-					"status":  async_tasks.StatusSuccess, // 通常是 2
-					"result":  string(resBytes),
-					"process": 100,
+					"status":      async_tasks.StatusSuccess,
+					"status_name": async_tasks.StatusNameSucceeded,
+					"result":      string(resBytes),
+					"process":     100,
+					"finished_at": time.Now(),
 				})
 				return
 			}
@@ -1009,8 +1025,10 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 
 		// 超过轮询次数 (超时)
 		database.DB.Model(&async_tasks.AsyncTask{}).Where("id = ?", internalID).Updates(map[string]interface{}{
-			"status":    async_tasks.StatusFailed,
-			"error_msg": "轮询任务超时，未能获取到视频",
+			"status":      async_tasks.StatusFailed,
+			"status_name": async_tasks.StatusNameFailed,
+			"error_msg":   "轮询任务超时，未能获取到视频",
+			"finished_at": time.Now(),
 		})
 	}(task.ID, result.TaskID)
 

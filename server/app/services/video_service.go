@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"spiritFruit/app/models/async_tasks"
+	"spiritFruit/app/models/scripts"
 	"spiritFruit/app/models/shots"
+	"spiritFruit/app/models/source"
 
 	"spiritFruit/pkg/asynq"
 	"spiritFruit/pkg/console"
@@ -14,6 +16,7 @@ import (
 type TimelineClipReq struct {
 	AssetID    interface{}            `json:"asset_id"`
 	ShotID     uint64                 `json:"shotId"`
+	URL        string                 `json:"url"`
 	Order      int                    `json:"order"`
 	StartTime  float64                `json:"start_time"`
 	EndTime    float64                `json:"end_time"`
@@ -24,6 +27,7 @@ type TimelineClipReq struct {
 type FinalizeEpisodeReq struct {
 	ProjectID     uint64            `json:"projectId" binding:"required"`
 	EpisodeNumber uint64            `json:"episodeNumber" binding:"required"`
+	ScriptID      uint64            `json:"scriptId"`
 	Clips         []TimelineClipReq `json:"clips"`
 }
 
@@ -31,10 +35,21 @@ type VideoService struct{}
 
 // FinalizeEpisode 参数类型改为使用本包的 FinalizeEpisodeReq
 func (s *VideoService) FinalizeEpisode(req FinalizeEpisodeReq) (map[string]interface{}, error) {
-	var shotList []shots.Shots
-	database.DB.Where("project_id = ? AND script_id = ?", req.ProjectID, req.EpisodeNumber).Order("sequence_no asc").Find(&shotList)
+	// episodeNumber 是展示序号，shots.script_id 保存的是 scripts.id，二者不能混用。
+	scriptID := req.ScriptID
+	if scriptID == 0 {
+		var script scripts.Scripts
+		if err := database.DB.Where("project_id = ? AND episode_no = ?", req.ProjectID, req.EpisodeNumber).First(&script).Error; err == nil {
+			scriptID = script.ID
+		}
+	}
 
-	if len(shotList) == 0 {
+	var shotList []shots.Shots
+	if scriptID > 0 {
+		database.DB.Where("project_id = ? AND script_id = ?", req.ProjectID, scriptID).Order("sequence_no asc").Find(&shotList)
+	}
+
+	if len(req.Clips) == 0 && len(shotList) == 0 {
 		return nil, fmt.Errorf("该集数下没有找到任何分镜")
 	}
 
@@ -50,7 +65,20 @@ func (s *VideoService) FinalizeEpisode(req FinalizeEpisodeReq) (map[string]inter
 		console.Success(fmt.Sprintf("使用前端时间线数据合成，片段数: %d", len(req.Clips)))
 
 		for _, clip := range req.Clips {
-			var videoURL string
+			videoURL := clip.URL
+
+			// URL 未提交时，从素材表解析 assetId。
+			if videoURL == "" && clip.AssetID != nil {
+				var asset source.Source
+				if id, ok := clip.AssetID.(float64); ok && id > 0 {
+					database.DB.First(&asset, uint64(id))
+				} else if id, ok := clip.AssetID.(string); ok && id != "" {
+					database.DB.First(&asset, id)
+				}
+				if asset.VideoUrl != nil {
+					videoURL = *asset.VideoUrl
+				}
+			}
 
 			if videoURL == "" && clip.ShotID != 0 {
 				if scene, exists := sceneMap[clip.ShotID]; exists {
@@ -114,7 +142,7 @@ func (s *VideoService) FinalizeEpisode(req FinalizeEpisodeReq) (map[string]inter
 	payload := asynq.MergeVideoPayload{
 		MergeID:   mergeRecordID,
 		ProjectID: req.ProjectID,
-		EpisodeID: req.EpisodeNumber,
+		EpisodeID: scriptID,
 		Title:     fmt.Sprintf("项目%d-第%d集合成", req.ProjectID, req.EpisodeNumber),
 		Clips:     mergeClips,
 	}

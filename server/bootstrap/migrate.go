@@ -8,6 +8,7 @@ import (
 	"spiritFruit/app/models/projects"
 	"spiritFruit/app/models/props"
 	"spiritFruit/app/models/scenes"
+	"spiritFruit/app/models/script_workflows"
 	"spiritFruit/app/models/scripts"
 	"spiritFruit/app/models/shot_characters"
 	"spiritFruit/app/models/shot_frame_image"
@@ -57,6 +58,10 @@ func SetupAutoMigrate() {
 		&shot_video_merge.ShotVideoMerge{},
 		&shots.Shots{},
 		&scripts.Scripts{},
+		&script_workflows.ScriptWorkflow{},
+		&script_workflows.ScriptWorkflowStep{},
+		&script_workflows.ScriptEpisodeDraft{},
+		&script_workflows.ScriptEpisodeVersion{},
 		&projects.Projects{},
 	)
 
@@ -144,4 +149,7 @@ func seedDefaultData() {
 			console.Success("默认系统菜单创建成功！")
 		}
 	}
+	// 隐藏的剧本工作流路由需要在老数据库中补种。
+	workflowMenu := sys_base_menus.SysBaseMenus{BaseModel: models.BaseModel{ID: 20}, ParentId: ptrUint(5), Path: ptrStr(":projectId/script-workflow/:workflowId?"), Name: ptrStr("ProjectScriptWorkflow"), Hidden: ptrInt8(1), Component: ptrStr("/projects/scriptWorkflow.vue"), Sort: ptrUint(0), Title: ptrStr("AI剧本创作"), Icon: nil}
+	database.DB.Where("id = ?", 20).FirstOrCreate(&workflowMenu)
 }
