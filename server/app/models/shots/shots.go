@@ -35,6 +35,7 @@ type Shots struct {
 	Action     *string `json:"action" form:"action" gorm:"column:action;type:text;comment:人物动作描述;"`
 	Dialogue   *string `json:"dialogue" form:"dialogue" gorm:"column:dialogue;type:text;comment:台词;"`
 	VisualDesc *string `json:"visualDesc" form:"visualDesc" gorm:"column:visual_desc;type:text;comment:画面/视觉结果;"`
+	Result     *string `json:"result" form:"result" gorm:"column:result;type:text;comment:动作结果;"`
 	Atmosphere *string `json:"atmosphere" form:"atmosphere" gorm:"column:atmosphere;type:text;comment:氛围描述;"`
 
 	// --- AIGC 提示词 (核心生产力) ---

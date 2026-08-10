@@ -65,9 +65,9 @@
                 </div>
 
                 <div class="assets-panel">
-                    <div class="panel-header">
+                    <div class="panel-header assets-header">
                         <h3>素材库 ({{ videoAssets.length }})</h3>
-                        <div style="display: flex; gap: 4px;">
+                        <div class="header-actions">
                             <t-button theme="primary" variant="text" size="small" @click="addAllAssetsToTimeline">
                                 <template #icon><t-icon name="add-rectangle" /></template>一键添加
                             </t-button>
@@ -1052,6 +1052,11 @@ watch(referenceMode, () => {
 });
 
 const currentStoryboard = computed(() => storyboards.value.find(s => String(s.id) === String(currentStoryboardId.value)))
+
+// 兼容旧分镜：历史数据把 Result 存在 visualDesc 中，编辑时同步展示但不丢失原字段。
+watch(currentStoryboard, (shot) => {
+    if (shot && !shot.result && shot.visualDesc) shot.result = shot.visualDesc
+}, { immediate: true })
 
 const previousStoryboard = computed(() => {
     if (!currentStoryboardId.value || storyboards.value.length < 2) return null;
@@ -2241,6 +2246,8 @@ onMounted(() => initData())
                         font-size: 14px;
                         font-weight: 600;
                         color: var(--td-text-color-primary);
+                        white-space: nowrap;
+                        flex-shrink: 0;
                     }
                 }
 
@@ -2344,15 +2351,38 @@ onMounted(() => initData())
                     justify-content: space-between;
                     align-items: center;
 
+                    &.assets-header {
+                        min-height: 44px;
+                        gap: 6px;
+                        flex-wrap: wrap;
+
+                        h3 {
+                            flex: 1 1 100%;
+                        }
+
+                        .header-actions {
+                            width: 100%;
+                            justify-content: flex-end;
+                        }
+                    }
+
                     h3 {
                         margin: 0;
                         font-size: 13px;
                         color: var(--td-text-color-primary);
+                        white-space: nowrap;
+                        flex-shrink: 0;
                     }
 
                     .header-actions {
                         display: flex;
-                        gap: 4px;
+                        gap: 6px;
+                        align-items: center;
+                        flex-shrink: 0;
+
+                        :deep(.t-button) {
+                            white-space: nowrap;
+                        }
                     }
                 }
 

@@ -169,16 +169,25 @@ func (ctrl *ShotsController) Store(c *gin.Context) {
 	if ok := requests.Validate(c, &request, requests.ShotsSave); !ok {
 		return
 	}
+	var sceneID *uint64
+	if request.SceneId != 0 {
+		sceneID = &request.SceneId
+	}
 	shotsModel := shots.Shots{
 		ProjectId:      &request.ProjectId,
 		ScriptId:       &request.ScriptId,
-		SceneId:        &request.SceneId,
+		SceneId:        sceneID,
 		SequenceNo:     &request.SequenceNo,
+		Title:          &request.Title,
 		ShotType:       &request.ShotType,
 		CameraMovement: &request.CameraMovement,
 		Angle:          &request.Angle,
 		Dialogue:       &request.Dialogue,
+		Time:           &request.Time,
+		Location:       &request.Location,
+		Action:         &request.Action,
 		VisualDesc:     &request.VisualDesc,
+		Result:         &request.Result,
 		Atmosphere:     &request.Atmosphere,
 		ImagePrompt:    &request.ImagePrompt,
 		VideoPrompt:    &request.VideoPrompt,
@@ -252,13 +261,22 @@ func (ctrl *ShotsController) Update(c *gin.Context) {
 	// 赋值字段
 	updateShots.ProjectId = &request.ProjectId
 	updateShots.ScriptId = &request.ScriptId
-	updateShots.SceneId = &request.SceneId
+	if request.SceneId != 0 {
+		updateShots.SceneId = &request.SceneId
+	} else {
+		updateShots.SceneId = nil
+	}
 	updateShots.SequenceNo = &request.SequenceNo
+	updateShots.Title = &request.Title
 	updateShots.ShotType = &request.ShotType
 	updateShots.CameraMovement = &request.CameraMovement
 	updateShots.Angle = &request.Angle
 	updateShots.Dialogue = &request.Dialogue
+	updateShots.Time = &request.Time
+	updateShots.Location = &request.Location
+	updateShots.Action = &request.Action
 	updateShots.VisualDesc = &request.VisualDesc
+	updateShots.Result = &request.Result
 	updateShots.Atmosphere = &request.Atmosphere
 	updateShots.ImagePrompt = &request.ImagePrompt
 	updateShots.VideoPrompt = &request.VideoPrompt

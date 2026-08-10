@@ -28,6 +28,31 @@ import (
 	"spiritFruit/pkg/video"
 )
 
+func canonicalProjectStyle(style string) string {
+	switch strings.ToLower(strings.TrimSpace(style)) {
+	case "guoman":
+		return "国漫风（2D Chinese animation, hand-drawn/anime rendering）"
+	case "guoman3d":
+		return "3D国漫风（stylized 3D Chinese animation）"
+	case "ghibli":
+		return "吉卜力风（2D hand-drawn animation）"
+	case "urban":
+		return "都市写实风（realistic cinematic）"
+	case "wasteland":
+		return "废土风（post-apocalyptic cinematic illustration）"
+	case "nostalgia":
+		return "复古怀旧风（retro film illustration）"
+	case "pixel":
+		return "像素风（pixel art）"
+	case "voxel":
+		return "体素风（voxel 3D）"
+	case "chibi3d":
+		return "3D盲盒风（chibi 3D）"
+	default:
+		return style
+	}
+}
+
 // VideoAPIConfig 准备视频 AI 配置结构体
 type VideoAPIConfig struct {
 	GetGoBaseURL   string
@@ -43,6 +68,19 @@ type VideoAPIConfig struct {
 	OpenAIBaseURL  string
 	OpenAIKey      string
 	VertexKey      string
+}
+
+func valueUint(v *uint64) uint64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+func valueString(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 // 🔴 helper: 将数据库的 provider 映射为 video.NewClient 底层包识别的名称
@@ -182,12 +220,14 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 	var shotModel shots.Shots
 	var structuredPrompt string
 	var autoRefImages []string // 备用的角色/道具图片池
-	projectStyle := "realistic cinematic style"
+	characterBible := ""
+	continuityPrompt := ""
+	projectStyle := "都市写实风（realistic cinematic）"
 	aspectRatio := "16:9"
 	var projectModel projects.Projects
 	if err := database.DB.First(&projectModel, p.ProjectID).Error; err == nil {
 		if projectModel.Style != nil && strings.TrimSpace(*projectModel.Style) != "" {
-			projectStyle = strings.TrimSpace(*projectModel.Style)
+			projectStyle = canonicalProjectStyle(*projectModel.Style)
 		}
 		if projectModel.Settings != nil && *projectModel.Settings != "" {
 			var settings map[string]interface{}
@@ -233,7 +273,8 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 				}
 			}
 			if len(charDetails) > 0 {
-				pb.WriteString(fmt.Sprintf("Characters details: %s. \n", strings.Join(charDetails, "; ")))
+				characterBible = strings.Join(charDetails, "; ")
+				pb.WriteString(fmt.Sprintf("Characters details: %s. \n", characterBible))
 			}
 		}
 
@@ -299,14 +340,29 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 		if shotModel.Atmosphere != nil && *shotModel.Atmosphere != "" {
 			pb.WriteString(fmt.Sprintf("Atmosphere: %s. \n", *shotModel.Atmosphere))
 		}
-		if shotModel.VisualDesc != nil && *shotModel.VisualDesc != "" {
-			pb.WriteString(fmt.Sprintf("Result: %s. \n", *shotModel.VisualDesc))
+		resultText := valueString(shotModel.Result)
+		if resultText == "" {
+			resultText = valueString(shotModel.VisualDesc)
+		}
+		if resultText != "" {
+			pb.WriteString(fmt.Sprintf("Result: %s. \n", resultText))
 		}
 		if shotModel.AudioPrompt != nil && *shotModel.AudioPrompt != "" {
 			pb.WriteString(fmt.Sprintf("BGM/Sound effects: %s. \n", *shotModel.AudioPrompt))
 		}
 
 		structuredPrompt = strings.TrimSpace(pb.String())
+		// 相邻镜头连续性：将上一镜头的角色、场景和视觉结果作为硬性上下文。
+		if shotModel.SequenceNo != nil && *shotModel.SequenceNo > 1 && shotModel.ScriptId != nil {
+			var previous shots.Shots
+			if database.DB.Where("script_id = ? AND sequence_no < ?", *shotModel.ScriptId, *shotModel.SequenceNo).Order("sequence_no desc").First(&previous).Error == nil {
+				ending := valueString(previous.Result)
+				if ending == "" {
+					ending = valueString(previous.VisualDesc)
+				}
+				continuityPrompt = fmt.Sprintf("Previous shot continuity: shot #%d ended with: %s. Preserve the exact same character identity, costume, location, lighting and color grading. Continue naturally from that ending pose; do not reset or redesign the scene.", valueUint(previous.SequenceNo), ending)
+			}
+		}
 	}
 
 	// 🔴 4. 提前推断参考图模式
@@ -417,16 +473,28 @@ func HandleGenerateVideoTask(ctx context.Context, t *asynq.Task) error {
 	}
 
 	constraintPrompt := promptGen.GetVideoConstraintPrompt(referenceMode)
-	styleConstraint := fmt.Sprintf(`=== Global Visual Bible (mandatory) ===
+	styleConstraint := fmt.Sprintf(`=== Global Visual Bible (mandatory, higher priority than shot prompt) ===
 Visual style: %s.
 Aspect ratio: %s.
 Keep the same art direction, color palette, lighting language, rendering technique, character facial identity, hairstyle, costume, body proportions, scene architecture, material texture and lens language as all other shots in this project.
-The supplied reference frame is the visual source of truth. Do not redesign characters, costumes, locations or color grading. Do not switch between realistic, anime, 3D, illustration or live-action styles.`, projectStyle, aspectRatio)
+The project style is immutable for this shot. The supplied reference frame (when present) is only a composition/identity reference. Do not redesign characters, costumes, locations or color grading. Do not switch between realistic, anime, 3D, illustration or live-action styles. Do not introduce 3D rendering, CGI, photorealism or a different animation style.`, projectStyle, aspectRatio)
+	if continuityPrompt != "" {
+		styleConstraint += "\n" + continuityPrompt
+	}
+	if characterBible != "" {
+		styleConstraint += fmt.Sprintf(`
+=== Character Identity Bible (mandatory) ===
+Keep each named character's face, age, hairstyle, skin tone, body shape, costume and accessories exactly consistent with this description: %s.
+Do not replace, merge, rename or invent characters. Every appearance of the same character must use the same identity, even in text-only mode.`, characterBible)
+	}
 	if constraintPrompt != "" {
 		finalPrompt = styleConstraint + "\n\n" + constraintPrompt + "\n\n=== Script & Scene Details ===\n" + finalPrompt
 	} else {
 		finalPrompt = styleConstraint + "\n\n=== Script & Scene Details ===\n" + finalPrompt
 	}
+	// Repeat the immutable style directive at the end so shot-level prompts
+	// containing accidental "3D/2D" wording cannot override the project bible.
+	finalPrompt += fmt.Sprintf("\n\n=== FINAL STYLE LOCK ===\nRender strictly in %s. Ignore any conflicting style words in the shot description; preserve one consistent visual style across the entire project.", projectStyle)
 
 	console.Success(fmt.Sprintf("任务[%d] 最终 Prompt: \n%s", p.AsyncTaskID, finalPrompt))
 

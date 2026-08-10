@@ -10,8 +10,8 @@ import (
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
-	"spiritFruit/app/models/async_tasks"
 	"spiritFruit/app/models/ai_config"
+	"spiritFruit/app/models/async_tasks"
 	"spiritFruit/app/models/characters"
 	"spiritFruit/app/models/props"
 	"spiritFruit/app/models/scenes"
@@ -38,11 +38,44 @@ type AIStoryboard struct {
 	Action         string   `json:"action"`
 	Dialogue       string   `json:"dialogue"`
 	VisualDesc     string   `json:"visualDesc"`
+	Result         string   `json:"result"`
 	Atmosphere     string   `json:"atmosphere"`
 	AudioPrompt    string   `json:"audioPrompt"`
 	DurationSec    int      `json:"durationSec"`  // AI 推理的时长秒数
 	CharacterIDs   []uint64 `json:"characterIds"` // 角色关联
 	PropIDs        []uint64 `json:"propIds"`      // 道具关联
+}
+
+// UnmarshalJSON accepts both the camelCase contract used by the UI and the
+// snake_case/legacy names commonly returned by screenplay prompts.
+func (s *AIStoryboard) UnmarshalJSON(data []byte) error {
+	type storyboardAlias AIStoryboard
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for from, to := range map[string]string{
+		"sequence_no": "sequenceNo", "shot_number": "sequenceNo", "shot_type": "shotType",
+		"camera_movement": "cameraMovement", "scene_id": "sceneId", "visual_desc": "visualDesc",
+		"audio_prompt": "audioPrompt", "duration_sec": "durationSec", "character_ids": "characterIds",
+		"prop_ids": "propIds",
+	} {
+		if v, ok := raw[from]; ok {
+			if _, exists := raw[to]; !exists {
+				raw[to] = v
+			}
+		}
+	}
+	normalized, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	var value storyboardAlias
+	if err := json.Unmarshal(normalized, &value); err != nil {
+		return err
+	}
+	*s = AIStoryboard(value)
+	return nil
 }
 
 // HandleGenerateShots 处理分镜生成任务
@@ -158,9 +191,10 @@ func HandleGenerateShots(ctx context.Context, t *asynq.Task) error {
    - **运镜方式(cameraMovement)**：[固定镜头/推镜/拉镜/摇镜/跟镜/移镜/环绕]
 5. **人物行为(action)**：**详细动作描述**，包含[谁+具体怎么做+肢体细节+表情状态]
 6. **对话/独白(dialogue)**：提取该镜头中的完整对话或独白内容（如无对话则为空字符串）
-7. **画面结果(visualDesc)**：动作的即时后果+视觉细节，像为盲人讲述画面一样详细
-8. **环境氛围(atmosphere)**：光线质感+色调+声音环境+整体氛围+角色情绪状态
-9. **音效配乐(audioPrompt)**：描述该镜头配乐的氛围、节奏、情绪及关键音效
+7. **动作结果(result)**：仅描述该动作完成后的即时后果或状态变化
+8. **画面描述(visualDesc)**：描述完整构图、主体位置、环境及可见细节，不与result混为一项
+9. **环境氛围(atmosphere)**：光线质感+色调+声音环境+整体氛围+角色情绪状态
+10. **音效配乐(audioPrompt)**：描述该镜头配乐的氛围、节奏、情绪及关键音效
 
 【输出格式】请以JSON格式输出，每个镜头包含以下字段（**所有键名必须严格遵守如下驼峰格式，描述性字段都要详细完整**）：
 {
@@ -176,6 +210,7 @@ func HandleGenerateShots(ctx context.Context, t *asynq.Task) error {
       "sceneId": 1,
       "action": "陈峥弯腰双手握住撬棍用力撬动保险箱门，手臂青筋暴起，眉头紧锁，汗水滑落",
       "dialogue": "（独白）这么多年了，里面到底藏着什么秘密？",
+      "result": "保险箱门弹开，箱内空无一物，陈峥由期待转为震惊",
       "visualDesc": "保险箱门突然弹开发出刺耳金属声，扬起灰尘在手电筒光束中飘散，箱内空无一物，陈峥表情从期待转为震惊",
       "atmosphere": "昏暗冷色调·青灰色为主，只有手电筒光束在黑暗中晃动，整体氛围压抑沉重。情绪：好奇感↑↑转失望↓",
       "audioPrompt": "低沉紧张的弦乐，节奏缓慢。金属碰撞声、灰尘飘散声、海浪拍打声",
@@ -416,6 +451,10 @@ func HandleGenerateShots(ctx context.Context, t *asynq.Task) error {
 			action := sb.Action
 			dialogue := sb.Dialogue
 			visualDesc := sb.VisualDesc
+			resultText := sb.Result
+			if resultText == "" {
+				resultText = visualDesc
+			}
 			atmosphere := sb.Atmosphere
 			audioPrompt := sb.AudioPrompt
 
@@ -433,6 +472,7 @@ func HandleGenerateShots(ctx context.Context, t *asynq.Task) error {
 				Location:       &locDesc,
 				Action:         &action,
 				VisualDesc:     &visualDesc,
+				Result:         &resultText,
 				Atmosphere:     &atmosphere,
 				Dialogue:       &dialogue,
 				ImagePrompt:    &imgPromptStr,
