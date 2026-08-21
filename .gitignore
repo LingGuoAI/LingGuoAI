@@ -10,3 +10,4 @@ web/dist
 web/.env.local
 web/.DS_Store
 .idea
+web/.idea
