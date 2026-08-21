@@ -3,7 +3,6 @@ package v1
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"spiritFruit/app/models/async_tasks"
 	"spiritFruit/app/models/characters"
 	"spiritFruit/app/models/projects"
@@ -21,6 +20,8 @@ import (
 	"spiritFruit/pkg/video"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type AiController struct {
@@ -905,7 +906,6 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 		response.Abort500(c, "参数错误: "+err.Error())
 		return
 	}
-
 	// 1. 将 Provider 映射为 video.NewClient 支持的底层驱动名称
 	providerName := strings.ToLower(req.Provider)
 	endpoint := ""
@@ -958,7 +958,6 @@ func (ctrl *AiController) TestVideoConfig(c *gin.Context) {
 		response.Abort500(c, "创建测试记录失败: "+err.Error())
 		return
 	}
-
 	// 4. 提交测试任务到厂商
 	result, err := client.GenerateVideo("A fast running dog in a green field", video.WithDuration(testDuration))
 	if err != nil {

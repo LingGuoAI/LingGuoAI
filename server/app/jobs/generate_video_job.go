@@ -501,6 +501,8 @@ Do not replace, merge, rename or invent characters. Every appearance of the same
 	// 8. 发起生成请求
 	taskModel.UpdateProgress(30)
 	result, err := client.GenerateVideo(finalPrompt, opts...)
+	fmt.Println("err-----", err)
+	fmt.Println("result:----", result)
 	if err != nil {
 		taskModel.MarkAsFailed(err)
 		return err

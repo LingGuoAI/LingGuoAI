@@ -157,7 +157,7 @@ func (ctrl *AiConfigController) Update(c *gin.Context) {
 	updateConfig := &ai_config.AiConfig{
 		BaseModel: models.BaseModel{ID: existingConfig.ID},
 	}
-
+	updateConfig.AdminID = existingConfig.AdminID
 	updateConfig.Name = &request.Name
 	updateConfig.ServiceType = &request.ServiceType
 	updateConfig.Provider = &request.Provider
