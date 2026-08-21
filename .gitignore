@@ -1,6 +1,7 @@
 server/uploads
 server/storage
 server/.env
+server/tmp
 /.env
 server/.idea
 server/.DS_Store
