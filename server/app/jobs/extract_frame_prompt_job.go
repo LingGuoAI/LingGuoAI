@@ -179,6 +179,9 @@ func HandleExtractFramePromptTask(ctx context.Context, t *asynq.Task) error {
 				aiConfig.OpenAIModel = modelName
 			}
 
+		case "atlascloud", "atlas-cloud", "atlas":
+			openai.ApplyAtlasCloudTextConfig(&aiConfig, baseURL, apiKey, modelName)
+
 		case "gemini", "google":
 			aiConfig.Provider = "gemini"
 			aiConfig.GeminiBaseURL = baseURL

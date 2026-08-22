@@ -188,6 +188,7 @@ interface ProviderConfig {
 const providerConfigs: Record<string, ProviderConfig[]> = {
     text: [
         { id: 'openai', name: 'OpenAI', models: ['gpt-4o', 'gpt-4-turbo'] },
+        { id: 'atlascloud', name: 'Atlas Cloud', models: ['qwen/qwen3.5-flash', 'deepseek-ai/deepseek-v4-pro'] },
         { id: 'getgoapi', name: 'NewRouter API', models: ['gemini-3-flash-preview', 'gpt-5.4'] },
         { id: 'gemini', name: 'Google Gemini', models: ['gemini-1.5-pro', 'gemini-3-flash-preview'] },
         { id: 'doubao', name: '火山引擎', models: ['doubao-pro-32k', 'doubao-lite-32k'] },
@@ -256,7 +257,7 @@ const handleTabChange = (value: AIServiceType) => {
 };
 
 const generateConfigName = (provider: string, serviceType: AIServiceType) => {
-    const providerNames: Record<string, string> = { getgoapi: 'GetGo', openai: 'OpenAI', gemini: 'Gemini', doubao: 'Volc', volces: 'Volc', volcengine: 'Volc' };
+    const providerNames: Record<string, string> = { getgoapi: 'GetGo', openai: 'OpenAI', atlascloud: 'AtlasCloud', gemini: 'Gemini', doubao: 'Volc', volces: 'Volc', volcengine: 'Volc' };
     const serviceNames: Record<AIServiceType, string> = { text: '文本', image: '图片', video: '视频' };
     const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     return `${providerNames[provider] || provider}-${serviceNames[serviceType] || serviceType}-${randomNum}`;
@@ -294,6 +295,7 @@ const handleProviderChange = () => {
     const defaultUrls: Record<AIServiceType, Record<string, string>> = {
         text: {
             openai: 'https://api.openai.com/v1',
+            atlascloud: 'https://api.atlascloud.ai/v1',
             getgoapi: 'https://www.zdom.cn/v1',
             gemini: 'https://generativelanguage.googleapis.com/v1beta',
             doubao: 'https://ark.cn-beijing.volces.com/api/v3',

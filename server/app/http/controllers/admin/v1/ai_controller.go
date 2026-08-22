@@ -794,6 +794,9 @@ func buildTestAiConfig(req TestConfigReq, serviceType string) openai.Config {
 			aiConfig.OpenAIModel = modelName
 		}
 
+	case "atlascloud", "atlas-cloud", "atlas":
+		openai.ApplyAtlasCloudTextConfig(&aiConfig, req.BaseURL, req.APIKey, modelName)
+
 	case "gemini", "google":
 		aiConfig.GeminiBaseURL = req.BaseURL
 		aiConfig.GeminiKey = req.APIKey
